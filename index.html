@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>face-api.js人脸识别物联网应用</title>
+    <style>
+        .red{color: blue;}
+    </style>
+</head>
+<body>
+<!--   *******************************Start: What source js file to use? ****************************************************   -->
+<!-- the online version that these examples were made with  -->
+<!-- <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@0.13.1"></script> -->
+<script src="tfjs1.0.3.js"></script>
+<!--   *******************************Stop: What source js file to use? ****************************************************   -->
+<h2 style="text-align:center"> AI人脸识别应用</h2>
+<div style="font-size:15px; background-color:lightyellow; width:88%;  border:5px solid blue; padding:5px; margin:5px;display: none">
+</div>
+<div id="myDiv123Code" style="padding:5px; margin:0px 25px;">
+    <!-- Load face-api.js -->
+    <script src="face-api.js"></script>
+    <!-- Load KNN Classifier -->
+     <script src="./knn-classifier.js"></script>
+<!--   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>-->
+    <h3>1.加载AI人脸识别模型</h3>
+    <input type=button value="载入人脸识别模型face_landmark_68_tiny_model" onclick="{myRunFace()}"><br>
+    <div id="modelinfo"></div>
+    <h3>2.启用摄像头</h3>
+    <select size=1 id="myCheck">
+        <option value='environment'>后置摄像头
+        <option value='user'>前置摄像头
+    </select>
+    <input type=button id="myButtonActivateWebCam" value="启用摄像头" onclick="{getVideo()}">
+    <input type=button id="myButtonActivateWebCam2" value="停止摄像头" onclick="{stopVideo()}">
+    <h3>3.训练浏览器学习不同人脸的图像</h3>
+    <input type=button value="训练" onclick="{myNewTrain()}">浏览器学习，人脸ID=
+    <input type=number value=0 size=3 id="myClassNumber" onchange = "{myTextChange()}" style="width: 30px;">，
+    <input type=text id="myClassText" placeholder="Label for this trained class: example Cell Phone" value="Tom" style="width: 80px;">的图像<br><br>
+
+    <div id="myDivLoss" style="font-size: large;">...</div>
+    <video  id="myVideo" width="300" height="200" style="border: 1px solid #ddd;"></video>
+    <canvas id="my32x32CanvasA" style="border: 1px solid #ddd; background-color:lightgray;" width="300" height="200" style="border: 1px solid #ddd; image-rendering: pixelated; interpolation-mode: nearest-neighbor;"></canvas>
+    <h3>4.识别人脸</h3>
+    每隔<input type=number id="myInterval"  value="1500" size=5 style="width:60px; ">毫秒<input type=button id="myButtonAuto" value="自动识别摄像头图像" onclick="{takeAuto()}">
+    <input type=button value="停止自动识别" onclick="{myStopAuto()}">
+    <div id="myDivTest" style="font-size: large;">...</div>
+    <h3>5.将识别结果发布到MQTT服务器</h3>
+    <input type=button value="连接MQTT服务器" onclick="connectMqtt()">发布识别结果到消息主题：<input id="publishTopic" type="text" value="yourID/msg">
+    <div id="mqtt_info"></div>
+    <div id="msg_count" style="color: red"></div>
+    <script src="mqtt.min.js"></script>
+    <script>
+        // 将在全局初始化一个 mqtt 变量
+        // 连接选项
+        const options = {
+            connectTimeout: 40000, // 超时时间
+            // 认证信息
+            clientId: 'emqx-connect-via-websocket'+ Math.random().toString(16).substr(2, 8),
+            username: '',
+            password: '',
+        }
+
+        let client;//Gloable variable
+        let pubTopic = document.getElementById('publishTopic');//Gloable variable
+        let msgCount = 0;
+         async  function connectMqtt(){
+             client= mqtt.connect('mqtt://www.sjaiedu.com:8083/mqtt', options)
+             console.log(mqtt)
+             client.on('connect',(e)=>{
+                 // console.log('连接成功!');
+                 document.getElementById('mqtt_info').innerHTML = 'MQTT连接成功！';
+             })
+             //
+             // client.on('reconnect', (error) => {
+             //     console.log('正在重连:', error)
+             // })
+
+             client.on('error', (error) => {
+                 console.log('连接失败:', error);
+                 document.getElementById('mqtt_info').innerHTML = 'MQTT连接成功！';
+             })
+             // 发布消息
+             if (!client.connected) {
+                 console.log('客户端未连接');
+             }
+             if(client === undefined) {
+                 console.log('client is undefined');
+             }else {
+                 client.publish(pubTopic.value, 'testmsg', (error) => { console.log(error || '消息发布成功')})
+                 // console.log(pubTopic)
+             }
+         }
+
+    </script>
+<!--    <div id="myDivSummary">...</div>-->
+    <!-- ************* Next we define the Javascript inside a web element so that the page can be refreshed dynamically **************-->
+
+    <!--  ************* The entire next line can be replaced with the <script> tag for a more conventional approch. ****************** -->
+
+    <style id="myButton124"  onload="{document.getElementById('myButton124').click()}"  onclick="{
+
+ ///////////////////////////////////// Global Variables ////////////////////////////////
+let myGroups = []
+//////////////////////////////////////// knn classifier stuff///////////////////////////
+
+// const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js/weights/face_landmark_68_tiny_model-weights_manifest.json'
+
+const MODEL_URL = './models/face_landmark_68_tiny_model-weights_manifest.json'
+myRunFace = async function() {
+  // clearInterval(document.myTimer)
+   classifier = knnClassifier.create();
+   // mobilenetModule = await mobilenet.load();
+   net = new faceapi.FaceLandmark68TinyNet()       // made it global
+   await net.load(MODEL_URL)
+   document.getElementById('modelinfo').innerHTML = 'face_landmark_68_tiny人脸识别模型已载入'
+   console.log('knn-classigfier and face-api loaded')
+  // document.myTimer = setInterval(myPredict, 1000)
+}
+
+
+myTextChange = async function(){
+    if (parseInt(document.getElementById('myClassNumber').value) < 0 ){
+           document.getElementById('myClassNumber').value = 0
+    }
+    if (myGroups[document.getElementById('myClassNumber').value] == undefined){
+        document.getElementById('myClassText').value = ''   // clear the box
+      } else {
+        document.getElementById('myClassText').value = myGroups[document.getElementById('myClassNumber').value]
+    }
+}
+
+myNewTrain = async function(){
+
+   let myCanvasElement = document.getElementById('my32x32CanvasA');
+   let myCTX = myCanvasElement.getContext('2d');
+   myCTX.drawImage(myVideoStream, 0, 0, myCanvasElement.width, myCanvasElement.height);
+   const img1 = tf.browser.fromPixels(my32x32CanvasA);
+  // const { boxes, scores } = await net.forward(img1)
+   //console.log('boxes and scores loaded')
+
+  const wow = await net.detectLandmarks(img1)
+ // console.log('wow')
+ // console.log(wow)
+ // console.log('wow._faceLandmarks')
+ // console.log(wow._faceLandmarks)
+ // console.log('wow._faceLandmarks.length')
+ // console.log(wow._faceLandmarks.length)
+  //console.log('wow._positions')
+  //console.log(wow._positions)
+ // console.log('wow._positions.length')
+ // console.log(wow._positions.length)
+
+  newArray = []
+  //for (let j=0;  j < wow._faceLandmarks.length; j++ ){
+ //    newArray[j] = []
+ //    newArray[j][0] = wow._faceLandmarks[j].x
+ //    newArray[j][1] = wow._faceLandmarks[j].y
+ //  }
+
+  for (let j=0;  j < wow._positions.length; j++ ){
+     newArray[j] = []
+     newArray[j][0] = wow._positions[j].x
+     newArray[j][1] = wow._positions[j].y
+   }
+   classifier.addExample(tf.tensor2d(newArray, shape=[68,2], 'float32'), parseInt(document.getElementById('myClassNumber').value));
+   myGroups[document.getElementById('myClassNumber').value] = document.getElementById('myClassText').value
+
+   const myAddCount = classifier.getClassExampleCount()[document.getElementById('myClassNumber').value]
+   const myGroupNumber =  document.getElementById('myClassNumber').value
+   document.getElementById('myDivLoss').innerHTML = '浏览器已学习'+myAddCount + ' 次ID='+ myGroupNumber+','+document.getElementById('myClassText').value+'的人脸图像。'
+
+}
+
+
+
+
+myPredict = async function(){
+
+  if (classifier.getNumClasses() >= 1){
+
+  let myCanvasElement = document.getElementById('my32x32CanvasA');
+  let myCTX = myCanvasElement.getContext('2d');
+
+
+  // myCTX.drawImage(myVideoStream, 0, 0, myCanvasElement.width, myCanvasElement.height);
+   const img2 = tf.browser.fromPixels(myVideo);
+   const wow2 = await net.detectLandmarks(img2)
+   newArray2 = []
+
+
+
+ // for (let j=0;  j < wow2._faceLandmarks.length; j++ ){
+ //    newArray2[j] = []
+  //   newArray2[j][0] = wow2._faceLandmarks[j].x
+  //   newArray2[j][1] = wow2._faceLandmarks[j].y
+ //  }
+
+
+  for (let j=0;  j < wow2._positions.length; j++ ){
+     newArray2[j] = []
+     newArray2[j][0] = wow2._positions[j].x
+     newArray2[j][1] = wow2._positions[j].y
+   }
+
+
+   const result = await classifier.predictClass(tf.tensor2d(newArray2, shape=[68,2], 'float32'), 3);   // number of groups
+
+   document.getElementById('myDivTest').innerHTML = '识别结果：摄像头拍摄的图像'+Math.round(result.confidences[result.classIndex]*100)+'% 可能性是ID=' + result.classIndex + ', '+
+      '<span class=red>' + myGroups[result.classIndex]+ '</span>的人脸<br>'
+    let facename = '识别结果为：'+  myGroups[result.classIndex];
+   myCTX.font = '20px Microsoft YaHei';
+   myCTX.textAlign = 'left';
+   myCTX.fillStyle = 'blue';
+   myCTX.textBaseline = 'middle';
+   myCTX.fillText(facename, 30, 20);
+
+   if(client === undefined) {
+       console.log('client is undefined');
+       document.getElementById('mqtt_info').innerHTML = 'MQTT未连接！'
+   }
+   else {client.publish(pubTopic.value, myGroups[result.classIndex], (error) => { console.log(error || '消息发布成功')})
+   msgCount += 1;
+   document.getElementById('msg_count').innerHTML = '发布第'+msgCount+'个消息：<b>'+myGroups[result.classIndex]+'</b> 到主题：<b>'+pubTopic.value+'</b>';
+   // console.log(pubTopic)
+   }
+  } else {(console.log('您还没有训练，请先训练浏览器学习人脸图像数据'))}
+}
+
+
+
+///////////////////////////////////// End KNN- Classifier stuff /////////////////////////////////////
+///////////////////////////////////// webcam stuff /////////////////////////////////////
+
+
+var myVideoStream = document.getElementById('myVideo')     // make it a global variable
+var myStoredInterval = 0
+
+
+
+stopVideo = async function() {
+  clearInterval(myStoredInterval)   // god idea to stop the auto snapshot taking
+  myVideoStream.srcObject.getTracks().forEach(track => track.stop())
+}
+
+
+
+
+
+getVideo = async function() {
+  const myCamera = await document.getElementById('myCheck').value
+
+  navigator.getMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia || navigator.msGetUserMedia;
+  navigator.getMedia({video: { facingMode: myCamera }, audio: false},
+
+    function(stream) {
+      myVideoStream.srcObject = stream
+      myVideoStream.play();
+  },
+
+   function(error) {
+     alert('webcam not working');
+  });
+}
+
+
+
+
+
+
+takeAuto = async function(){
+    myStoredInterval = setInterval(async function(){
+           let myCanvasElement = document.getElementById('my32x32CanvasA');
+   let myCTX = myCanvasElement.getContext('2d');
+   myCTX.drawImage(myVideoStream, 0, 0, myCanvasElement.width, myCanvasElement.height);
+       await myPredict()
+   }, document.getElementById('myInterval').value);
+}
+
+
+
+
+myStopAuto  = async function(){
+    clearInterval(myStoredInterval)
+}
+
+
+
+
+ ///////////////////////////////////////////// Done Webcam functions ////////////////////////////////////////
+
+ myLoadUrl = async function(){
+  //alert('The test function will need to be changed if other models are loaded')
+  document.getElementById('myDivTest').innerHTML = 'Expect major code changes if you load a different model than what is expected'
+  const myFileName = document.getElementById('myInFile').value
+  if (myFileName != null){
+    model = await tf.loadLayersModel(myFileName);     // should make the model a global variable
+    document.getElementById('myDivSummary').innerHTML = ''
+    await model.summary(null,null,x => {document.getElementById('myDivSummary').innerHTML += x + '<br>'});
+   // await myPredict()
+  }
+}
+
+
+
+
+
+
+/////////////////////////////////// END ALL FUNCTIONS ///////////////////////////////////////
+
+
+
+//////////////////////////////////   WEIRD STYLE TAG THAT IS ACTUALLY A DYNAMIC SCRIPT TAG ///////////////////
+
+
+}"></style>
+    <!-- If you replaced the <style> tag with a <script> tag don't forget to change the above line to just </script>  -->
+
+
+</div>
+<!--<div id='myDiv123'>...</div>-->
+
+<input id="myUpdate123" type=button value="Update and Run" style="visibility:hidden;" onclick="{
+
+   // first remove first and last line since they are injected
+  myFred = document.getElementById('myTextarea123').value.split('\n')
+  myFred.pop()
+  myFred.push('')
+  myFred.shift()
+  myFred.shift()
+  myJoe = myFred.join('\n')
+
+  document.getElementById('myDiv123Code').innerHTML =    myJoe
+  document.getElementById('myButton123').click()
+
+}"><br>
+
+
+
+
+<!--  Following is a helper functions  to grow the textareas  -->
+
+<script>
+
+    myOnce123 = true    // so textareas are only clicked once
+
+
+    function myTextGrow(myT, myB){
+        var myCursorStart = document.getElementById(myT).selectionStart
+        var myCursorEnd = document.getElementById(myT).selectionEnd
+
+        myDivName = myB.replace('Code','')
+        document.getElementById(myT).value = '\x3Cscript src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.0.3"> \x3C/script> \n\n' + document.getElementById(myB).innerHTML
+        document.getElementById(myT).value += '<div id=\''+myDivName+'\'>...</div><br>'
+        setTimeout(function() {
+            while (  document.getElementById(myT).clientHeight < document.getElementById(myT).scrollHeight){
+                document.getElementById(myT).rows += 3;
+            }
+        }, 100)
+
+        document.getElementById(myT).selectionStart = myCursorStart
+        document.getElementById(myT).selectionEnd = myCursorEnd
+
+    }
+
+
+</script>
+</body>
+</html>
